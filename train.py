@@ -13,6 +13,7 @@ import random
 
 import numpy as np
 import torch
+import wandb
 
 from fairseq import checkpoint_utils, distributed_utils, options, progress_bar, tasks, utils
 from fairseq.data import iterators
@@ -23,6 +24,7 @@ fb_pathmgr_registerd = False
 
 
 def main(args, init_distributed=False):
+    wandb.init('fairseq', config=args)
     utils.import_user_module(args)
 
     try:
@@ -136,6 +138,21 @@ def train(args, trainer, task, epoch_itr):
 
         # log mid-epoch stats
         stats = get_training_stats(trainer)
+        wandb_stats = {}
+        from numbers import Number
+        from fairseq.meters import AverageMeter, StopwatchMeter, TimeMeter
+        for k in stats.keys():
+            stat = stats[k]
+            if isinstance(stat, Number):
+                wandb_stats[k] = stat
+            elif isinstance(stat, AverageMeter):
+                wandb_stats[k] = stat.avg
+            elif isinstance(stat, TimeMeter):
+                wandb_stats[k] = stat.avg
+            elif isinstance(stat, StopwatchMeter):
+                wandb_stats[k] = stat.sum
+        wandb.log(wandb_stats)
+
         for k, v in log_output.items():
             if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
                 continue  # these are already logged above
@@ -153,10 +170,10 @@ def train(args, trainer, task, epoch_itr):
 
         num_updates = trainer.get_num_updates()
         if (
-            not args.disable_validation
-            and args.save_interval_updates > 0
-            and num_updates % args.save_interval_updates == 0
-            and num_updates > 0
+                not args.disable_validation
+                and args.save_interval_updates > 0
+                and num_updates % args.save_interval_updates == 0
+                and num_updates > 0
         ):
             valid_losses = validate(args, trainer, task, epoch_itr, valid_subsets)
             checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
@@ -331,7 +348,7 @@ def cli_main():
             print('| NOTE: you may get better performance with: --ddp-backend=no_c10d')
         torch.multiprocessing.spawn(
             fn=distributed_main,
-            args=(args, ),
+            args=(args,),
             nprocs=args.distributed_world_size,
         )
     else:
