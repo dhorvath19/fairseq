@@ -65,12 +65,10 @@ class MultiheadAttention(nn.Module):
 
     @property
     def in_proj_weight(self):
-        # TODO: Remove this backward compatibility code (in_proj_weight)
         return torch.cat((self.q_proj.weight, self.k_proj.weight, self.v_proj.weight))
 
     @property
     def in_proj_bias(self):
-        # TODO: Remove this backward compatibility code (in_proj_bias)
         return torch.cat((self.q_proj.bias, self.k_proj.bias, self.v_proj.bias))
 
     def prepare_for_onnx_export_(self):
@@ -312,8 +310,6 @@ class MultiheadAttention(nn.Module):
         return attn_weights
 
     def upgrade_state_dict_named(self, state_dict, name):
-        # TODO: Remove this backward compatibility code (in_proj_weight)
-        # here, we convert in_proj_weight to individual q,k,v weights
         prefix = name + '.' if name != '' else ''
         items_to_add = {}
         keys_to_remove = []
@@ -341,5 +337,3 @@ class MultiheadAttention(nn.Module):
 
         for key, value in items_to_add.items():
             state_dict[key] = value
-
-        return state_dict
