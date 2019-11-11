@@ -53,8 +53,9 @@ class Search(object):
 
 class BeamSearch(Search):
 
-    def __init__(self, tgt_dict):
+    def __init__(self, tgt_dict, noise_weight=0.):
         super().__init__(tgt_dict)
+        self.noise_weight = noise_weight
 
     def step(self, step, lprobs, scores):
         super()._init_buffers(lprobs)
@@ -63,10 +64,14 @@ class BeamSearch(Search):
         if step == 0:
             # at the first step all hypotheses are equally likely, so use
             # only the first beam
-            lprobs = lprobs[:, ::beam_size, :].contiguous()
+            _lprobs = lprobs[:, ::beam_size, :].contiguous()
+            _noise = _lprobs.detach().clone().uniform_()
+            lprobs = _lprobs + self.noise_weight * _noise
         else:
             # make probs contain cumulative scores for each hypothesis
-            lprobs.add_(scores[:, :, step - 1].unsqueeze(-1))
+            _score = scores[:, :, step - 1].unsqueeze(-1)
+            _noise = _score.detach().clone().uniform_()
+            lprobs.add_(_score + self.noise_weight * _noise)
 
         torch.topk(
             lprobs.view(bsz, -1),

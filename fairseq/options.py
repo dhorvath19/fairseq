@@ -500,6 +500,8 @@ def add_generation_args(parser):
     group.add_argument('--print-alignment', action='store_true',
                        help='if set, uses attention feedback to compute and print alignment to source tokens')
     group.add_argument('--print-step', action='store_true')
+    group.add_argument('--noise-weight', default=0., type=float, metavar='N',
+                       help='weight of noising in beam search')
 
     # arguments for iterative refinement generator
     group.add_argument('--iter-decode-eos-penalty', default=0.0, type=float, metavar='N',

@@ -32,6 +32,7 @@ class SequenceGenerator(object):
         diverse_beam_strength=0.5,
         match_source_len=False,
         no_repeat_ngram_size=0,
+        noise_weight=0.
     ):
         """Generates translations of a given source sentence.
 
@@ -95,7 +96,7 @@ class SequenceGenerator(object):
                 tgt_dict, min_len_a=1, min_len_b=0, max_len_a=1, max_len_b=0,
             )
         else:
-            self.search = search.BeamSearch(tgt_dict)
+            self.search = search.BeamSearch(tgt_dict, noise_weight)
 
     @torch.no_grad()
     def generate(self, models, sample, **kwargs):
