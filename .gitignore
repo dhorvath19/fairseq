@@ -137,3 +137,7 @@ examples/translation/subword-nmt/
 *.out
 
 own_data/
+
+# VSCODE
+.vscode/ftp-sync.json
+.vscode/settings.json
