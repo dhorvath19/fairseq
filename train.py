@@ -24,7 +24,7 @@ fb_pathmgr_registerd = False
 
 
 def main(args, init_distributed=False):
-    wandb.init('fairseq', config=args)
+    wandb.init(project=args.job_name, config=args)
     utils.import_user_module(args)
 
     try:

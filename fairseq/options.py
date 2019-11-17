@@ -341,6 +341,8 @@ def add_distributed_training_args(parser):
     group.add_argument('--fast-stat-sync', default=False, action='store_true',
                         help='Enable fast sync of stats between nodes, this hardcodes to '
                         'sync only some default stats from logging_output.')
+    group.add_argument('--job-name', type=str, default=None,
+                       help='name of job to be used by WandB')
     # fmt: on
     return group
 
