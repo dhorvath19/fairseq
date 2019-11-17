@@ -258,6 +258,7 @@ def validate(args, trainer, task, epoch_itr, subsets):
             if meter is not None:
                 meter.reset()
         extra_meters = collections.defaultdict(lambda: AverageMeter())
+        
 
         for sample in progress:
             log_output = trainer.valid_step(sample)
@@ -269,6 +270,22 @@ def validate(args, trainer, task, epoch_itr, subsets):
 
         # log validation stats
         stats = get_valid_stats(trainer, args, extra_meters)
+        wandb_stats = {}
+        from numbers import Number
+        from fairseq.meters import AverageMeter, StopwatchMeter, TimeMeter
+        for k in stats.keys():
+            stat = stats[k]
+            key = "valid_" + k
+            if isinstance(stat, Number):
+                wandb_stats[key] = stat
+            elif isinstance(stat, AverageMeter):
+                wandb_stats[key] = stat.avg
+            elif isinstance(stat, TimeMeter):
+                wandb_stats[key] = stat.avg
+            elif isinstance(stat, StopwatchMeter):
+                wandb_stats[key] = stat.sum
+        wandb.log(wandb_stats, commit=False)
+        
         for k, meter in extra_meters.items():
             stats[k] = meter.avg
         progress.print(stats, tag=subset, step=trainer.get_num_updates())
