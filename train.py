@@ -18,13 +18,14 @@ import wandb
 from fairseq import checkpoint_utils, distributed_utils, options, progress_bar, tasks, utils
 from fairseq.data import iterators
 from fairseq.trainer import Trainer
-from fairseq.meters import AverageMeter, StopwatchMeter
+from numbers import Number
+from fairseq.meters import AverageMeter, StopwatchMeter, TimeMeter
 
 fb_pathmgr_registerd = False
 
 
 def main(args, init_distributed=False):
-    wandb.init('fairseq', config=args)
+    wandb.init(project=args.job_name, config=args)
     utils.import_user_module(args)
 
     try:
@@ -139,8 +140,6 @@ def train(args, trainer, task, epoch_itr):
         # log mid-epoch stats
         stats = get_training_stats(trainer)
         wandb_stats = {}
-        from numbers import Number
-        from fairseq.meters import AverageMeter, StopwatchMeter, TimeMeter
         for k in stats.keys():
             stat = stats[k]
             if isinstance(stat, Number):
@@ -258,6 +257,7 @@ def validate(args, trainer, task, epoch_itr, subsets):
             if meter is not None:
                 meter.reset()
         extra_meters = collections.defaultdict(lambda: AverageMeter())
+        
 
         for sample in progress:
             log_output = trainer.valid_step(sample)
@@ -269,6 +269,20 @@ def validate(args, trainer, task, epoch_itr, subsets):
 
         # log validation stats
         stats = get_valid_stats(trainer, args, extra_meters)
+        wandb_stats = {}
+        for k in stats.keys():
+            stat = stats[k]
+            key = "valid_" + k
+            if isinstance(stat, Number):
+                wandb_stats[key] = stat
+            elif isinstance(stat, AverageMeter):
+                wandb_stats[key] = stat.avg
+            elif isinstance(stat, TimeMeter):
+                wandb_stats[key] = stat.avg
+            elif isinstance(stat, StopwatchMeter):
+                wandb_stats[key] = stat.sum
+        wandb.log(wandb_stats, commit=False)
+        
         for k, meter in extra_meters.items():
             stats[k] = meter.avg
         progress.print(stats, tag=subset, step=trainer.get_num_updates())

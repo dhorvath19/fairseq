@@ -1,0 +1,17 @@
+mkdir own_data
+cd own_data
+git clone https://github.com/rsennrich/subword-nmt
+
+# shuffle
+paste -d '::::' gec.src /dev/null /dev/null /dev/null gec.trg | shuf | awk -v FS="::::" '{ print $1 > "gec.shuf.src" ; print $2 > "gec.shuf.trg" }'
+
+cat gec.shuf.src gec.shuf.trg | python subword-nmt/learn_bpe.py -s 40000 -o bpecodes
+
+python subword-nmt/apply_bpe.py -c bpecodes  <gec.shuf.src> gec.bpe.wrg
+python subword-nmt/apply_bpe.py -c bpecodes  <gec.shuf.trg> gec.bpe.cor
+
+# split
+ext=cor
+head -3000 gec.bpe.$ext > gec/test.$ext
+sed -n '3001,6000p' gec.bpe.$ext > gec/valid.$ext
+tail --lines=+6001 gec.bpe.$ext > gec/train.$ext

@@ -341,6 +341,8 @@ def add_distributed_training_args(parser):
     group.add_argument('--fast-stat-sync', default=False, action='store_true',
                         help='Enable fast sync of stats between nodes, this hardcodes to '
                         'sync only some default stats from logging_output.')
+    group.add_argument('--job-name', type=str, default=None,
+                       help='name of job to be used by WandB')
     # fmt: on
     return group
 
@@ -510,6 +512,8 @@ def add_generation_args(parser):
                        help='maximum iterations for iterative refinement.')
     group.add_argument('--iter-decode-force-max-iter', action='store_true',
                        help='if set, run exact the maximum number of iterations without early stop')
+    group.add_argument('--job-name', type=str, default=None,
+                       help='name of job to be used by WandB')
 
     # special decoding format for advanced decoding.
     group.add_argument('--decoding-format', default=None, type=str, choices=['unigram', 'ensemble', 'vote', 'dp', 'bs'])

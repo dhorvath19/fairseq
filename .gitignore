@@ -131,3 +131,9 @@ wandb/
 examples/translation/mosesdecoder/
 
 examples/translation/subword-nmt/
+
+own_data/
+
+*.out
+
+*.err

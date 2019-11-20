@@ -8,6 +8,7 @@ Translate pre-processed data with a trained model.
 """
 
 import torch
+import wandb
 
 from fairseq import bleu, checkpoint_utils, options, progress_bar, tasks, utils
 from fairseq.meters import StopwatchMeter, TimeMeter
@@ -19,6 +20,8 @@ def main(args):
         '--sampling requires --nbest to be equal to --beam'
     assert args.replace_unk is None or args.raw_text, \
         '--replace-unk requires a raw text dataset (--raw-text)'
+    
+    wandb.init(project=args.job_name, config=args)
 
     utils.import_user_module(args)
 
@@ -82,6 +85,8 @@ def main(args):
     gen_timer = StopwatchMeter()
     generator = task.build_generator(args)
 
+    iter_len = itr.__len__()
+
     # Generate and compute BLEU score
     if args.sacrebleu:
         scorer = bleu.SacrebleuScorer()
@@ -91,7 +96,7 @@ def main(args):
     has_target = True
     with progress_bar.build_progress_bar(args, itr) as t:
         wps_meter = TimeMeter()
-        for sample in t:
+        for idx, sample in enumerate(t):
             sample = utils.move_to_cuda(sample) if use_cuda else sample
             if 'net_input' not in sample:
                 continue
@@ -128,9 +133,9 @@ def main(args):
 
                 if not args.quiet:
                     if src_dict is not None:
-                        print('S-{}\t{}'.format(sample_id, src_str))
+                        print('S-{}\t{}'.format(sample_id, src_str.encode('utf-8').decode('latin-1')))
                     if has_target:
-                        print('T-{}\t{}'.format(sample_id, target_str))
+                        print('T-{}\t{}'.format(sample_id, target_str.encode('utf-8').decode('latin-1')))
 
                 # Process top predictions
                 for j, hypo in enumerate(hypos[i][:args.nbest]):
@@ -144,7 +149,7 @@ def main(args):
                     )
 
                     if not args.quiet:
-                        print('H-{}\t{}\t{}'.format(sample_id, hypo['score'], hypo_str))
+                        print('H-{}\t{}\t{}'.format(sample_id, hypo['score'], hypo_str.encode('utf-8').decode('latin-1')))
                         print('P-{}\t{}'.format(
                             sample_id,
                             ' '.join(map(
@@ -175,6 +180,7 @@ def main(args):
             wps_meter.update(num_generated_tokens)
             t.log({'wps': round(wps_meter.avg)})
             num_sentences += sample['nsentences']
+            wandb.log({'num_sentences': num_sentences, 'wps': round(wps_meter.avg), 'progress': (float(idx)/iter_len) * 100})
 
     print('| Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} sentences/s, {:.2f} tokens/s)'.format(
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
