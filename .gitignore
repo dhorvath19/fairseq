@@ -124,6 +124,10 @@ data-bin/
 /fairseq/data/data_utils_fast.cpp
 /fairseq/data/token_block_utils_fast.cpp
 
+# VSCODE
+.vscode/ftp-sync.json
+.vscode/settings.json
+
 examples/translation/wmt17_en_de/
 
 results/
