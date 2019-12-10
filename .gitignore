@@ -136,6 +136,16 @@ examples/translation/mosesdecoder/
 
 examples/translation/subword-nmt/
 
+*.err
+
+*.out
+
+own_data/
+
+# VSCODE
+.vscode/ftp-sync.json
+.vscode/settings.json
+
 own_data/
 
 *.out
