@@ -32,6 +32,8 @@ class IterativeRefinementGenerator(object):
         retain_dropout=False,
         adaptive=True,
         retain_history=False,
+        del_penalty=0.0,
+        decode_from_source=False
     ):
         """
         Generates translations based on iterative refinement.
@@ -58,6 +60,8 @@ class IterativeRefinementGenerator(object):
         self.retain_history = retain_history
         self.adaptive = adaptive
         self.models = models
+        self.del_penalty=del_penalty
+        self.decode_from_source=decode_from_source
 
     def generate_batched_itr(
         self,
@@ -123,7 +127,7 @@ class IterativeRefinementGenerator(object):
         encoder_out = model.forward_encoder([src_tokens, src_lengths])
 
         # initialize buffers (very model specific, with length prediction or not)
-        prev_decoder_out = model.initialize_output_tokens(encoder_out, src_tokens)
+        prev_decoder_out = model.initialize_output_tokens(encoder_out, src_tokens, self.decode_from_source)
         prev_output_tokens = prev_decoder_out.output_tokens.clone()
 
         if self.retain_history:
@@ -171,6 +175,7 @@ class IterativeRefinementGenerator(object):
                 "eos_penalty": self.eos_penalty,
                 "max_ratio": self.max_ratio,
                 "decoding_format": self.decoding_format,
+                "del_penalty": self.del_penalty,
             }
             prev_decoder_out = prev_decoder_out._replace(
                 step=step,

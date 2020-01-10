@@ -132,7 +132,9 @@ class TranslationLevenshteinTask(TranslationTask):
             max_iter=getattr(args, 'iter_decode_max_iter', 10),
             decoding_format=getattr(args, 'decoding_format', None),
             adaptive=not getattr(args, 'iter_decode_force_max_iter', False),
-            retain_history=getattr(args, 'retain_iter_history', False))
+            retain_history=getattr(args, 'retain_iter_history', False),
+            del_penalty=getattr(args, 'iter_decode_del_penalty', 0.0),
+            decode_from_source=getattr(args, 'decode_from_source', False))
 
     def train_step(self,
                    sample,

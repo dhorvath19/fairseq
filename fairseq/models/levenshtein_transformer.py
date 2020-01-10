@@ -203,9 +203,7 @@ def _get_del_ins_targets(in_tokens, out_tokens, padding_idx):
     return word_del_targets, mask_ins_targets
 
 
-def _apply_ins_masks(
-    in_tokens, in_scores, mask_ins_pred, padding_idx, unk_idx, eos_idx
-):
+def _apply_ins_masks(in_tokens, in_scores, mask_ins_pred, padding_idx, unk_idx, eos_idx):
 
     in_masks = in_tokens.ne(padding_idx)
     in_lengths = in_masks.sum(1)
@@ -240,9 +238,7 @@ def _apply_ins_masks(
     return out_tokens, out_scores
 
 
-def _apply_ins_words(
-    in_tokens, in_scores, word_ins_pred, word_ins_scores, unk_idx
-):
+def _apply_ins_words(in_tokens, in_scores, word_ins_pred, word_ins_scores, unk_idx):
     word_ins_masks = in_tokens.eq(unk_idx)
     out_tokens = in_tokens.masked_scatter(word_ins_masks, word_ins_pred[word_ins_masks])
 
@@ -256,9 +252,7 @@ def _apply_ins_words(
     return out_tokens, out_scores
 
 
-def _apply_del_words(
-    in_tokens, in_scores, in_attn, word_del_pred, padding_idx, bos_idx, eos_idx
-):
+def _apply_del_words(in_tokens, in_scores, in_attn, word_del_pred, padding_idx, bos_idx, eos_idx):
     # apply deletion to a tensor
     in_masks = in_tokens.ne(padding_idx)
     bos_eos_masks = in_tokens.eq(bos_idx) | in_tokens.eq(eos_idx)
@@ -332,6 +326,12 @@ class LevenshteinTransformerModel(TransformerModel):
             "--sampling-for-deletion",
             action='store_true',
             help='instead of argmax, use sampling to predict the tokens'
+        )
+        parser.add_argument(
+            "--separate-final-layers",
+            default=0,
+            type=int,
+            help='number of separate final attention layers for each predictors'
         )
 
     @classmethod
@@ -409,9 +409,8 @@ class LevenshteinTransformerModel(TransformerModel):
         return self.encoder(*encoder_inputs)
 
     def forward_decoder(
-        self, decoder_out, encoder_out, eos_penalty=0.0, max_ratio=None, **kwargs
+        self, decoder_out, encoder_out, eos_penalty=0.0, max_ratio=None, del_penalty=0.0, **kwargs
     ):
-
         output_tokens = decoder_out.output_tokens
         output_scores = decoder_out.output_scores
         attn = decoder_out.attn
@@ -437,6 +436,9 @@ class LevenshteinTransformerModel(TransformerModel):
                 _skip_encoder_out(self.encoder, encoder_out, can_del_word)
             )
             word_del_score = F.log_softmax(word_del_out, 2)
+            if del_penalty > 0.0:
+                word_del_score[:, :, 0] = word_del_score[:, :, 0] - del_penalty
+
             word_del_pred = word_del_score.max(-1)[1].bool()
 
             _tokens, _scores, _attn = _apply_del_words(
@@ -465,6 +467,7 @@ class LevenshteinTransformerModel(TransformerModel):
             mask_ins_score = F.log_softmax(mask_ins_out, 2)
             if eos_penalty > 0.0:
                 mask_ins_score[:, :, 0] = mask_ins_score[:, :, 0] - eos_penalty
+                
             mask_ins_pred = mask_ins_score.max(-1)[1]
             mask_ins_pred = torch.min(
                 mask_ins_pred, max_lens[can_ins_mask, None].expand_as(mask_ins_pred)
@@ -520,10 +523,14 @@ class LevenshteinTransformerModel(TransformerModel):
             history=history
         )
 
-    def initialize_output_tokens(self, encoder_out, src_tokens):
-        initial_output_tokens = src_tokens.new_zeros(src_tokens.size(0), 2)
-        initial_output_tokens[:, 0] = self.bos
-        initial_output_tokens[:, 1] = self.eos
+    def initialize_output_tokens(self, encoder_out, src_tokens, decode_from_source=False):
+        if decode_from_source:
+            # the generation should start from the original sentence
+            initial_output_tokens = src_tokens.detach().clone()
+        else:
+            initial_output_tokens = src_tokens.new_zeros(src_tokens.size(0), 2)
+            initial_output_tokens[:, 0] = self.bos
+            initial_output_tokens[:, 1] = self.eos
 
         initial_output_scores = initial_output_tokens.new_zeros(
             *initial_output_tokens.size()
@@ -550,10 +557,15 @@ class LevenshteinTransformerDecoder(TransformerDecoder):
         self.sampling_for_deletion = getattr(args, "sampling_for_deletion", False)
         self.embed_mask_ins = Embedding(256, self.output_embed_dim * 2, None)
         self.embed_word_del = Embedding(2, self.output_embed_dim, None)
+        self.final_layers_del = None
+        self.final_layers_msk = None
+        self.final_layers_pred = None
 
         # del_word, ins_mask, ins_word
         self.early_exit = [int(i) for i in args.early_exit.split(',')]
         assert len(self.early_exit) == 3
+
+        self.separate_final_layers = getattr(args, "separate_final_layers", 0)
 
         # copy layers for mask-predict/deletion
         self.layers_msk = None
@@ -572,9 +584,24 @@ class LevenshteinTransformerDecoder(TransformerDecoder):
         if getattr(args, "share_discriminator_maskpredictor", False):
             assert getattr(args, "no_share_discriminator", False), "must set saperate discriminator"
             self.layers_msk = self.layers_del
+        
+        if  self.separate_final_layers > 0:
+            self.final_layers_del = nn.ModuleList([
+                                    TransformerDecoderLayer(args, no_encoder_attn)
+                                    for _ in range(self.separate_final_layers)
+                                ])
+            self.final_layers_msk = nn.ModuleList([
+                                    TransformerDecoderLayer(args, no_encoder_attn)
+                                    for _ in range(self.separate_final_layers)
+                                ])
+            self.final_layers_pred = nn.ModuleList([
+                                    TransformerDecoderLayer(args, no_encoder_attn)
+                                    for _ in range(self.separate_final_layers)
+                                ])
+        
 
     def extract_features(
-        self, prev_output_tokens, encoder_out=None, early_exit=None, layers=None, **unused
+        self, prev_output_tokens, encoder_out=None, early_exit=None, layers=None, final_layers=None, **unused
     ):
         """
         Similar to *forward* but only return features.
@@ -622,6 +649,19 @@ class LevenshteinTransformerDecoder(TransformerDecoder):
                 self_attn_padding_mask=decoder_padding_mask,
             )
             inner_states.append(x)
+        
+        # separate final layers
+        print("###### FINAL LAYERS:", final_layers)
+        if(final_layers):
+            for _, layer in enumerate(final_layers):
+                x, attn = layer(
+                    x,
+                    encoder_out.encoder_out if encoder_out is not None else None,
+                    encoder_out.encoder_padding_mask if encoder_out is not None else None,
+                    self_attn_mask=None,
+                    self_attn_padding_mask=decoder_padding_mask,
+                )
+                inner_states.append(x)
 
         if self.layer_norm:
             x = self.layer_norm(x)
@@ -636,20 +676,20 @@ class LevenshteinTransformerDecoder(TransformerDecoder):
 
     def forward_mask_ins(self, prev_output_tokens, encoder_out=None, **unused):
         features, extra = self.extract_features(
-            prev_output_tokens, encoder_out=encoder_out, early_exit=self.early_exit[1], layers=self.layers_msk, **unused
+            prev_output_tokens, encoder_out=encoder_out, early_exit=self.early_exit[1], layers=self.layers_msk, final_layers=self.final_layers_msk, **unused
         )
         features_cat = torch.cat([features[:, :-1, :], features[:, 1:, :]], 2)
         return F.linear(features_cat, self.embed_mask_ins.weight), extra['attn']
 
     def forward_word_ins(self, prev_output_tokens, encoder_out=None, **unused):
         features, extra = self.extract_features(
-            prev_output_tokens, encoder_out=encoder_out, early_exit=self.early_exit[2], layers=self.layers, **unused
+            prev_output_tokens, encoder_out=encoder_out, early_exit=self.early_exit[2], layers=self.layers, final_layers=self.final_layers_pred, **unused
         )
         return self.output_layer(features), extra['attn']
 
     def forward_word_del(self, prev_output_tokens, encoder_out=None, **unused):
         features, extra = self.extract_features(
-            prev_output_tokens, encoder_out=encoder_out, early_exit=self.early_exit[0], layers=self.layers_del, **unused
+            prev_output_tokens, encoder_out=encoder_out, early_exit=self.early_exit[0], layers=self.layers_del, final_layers=self.final_layers_del, **unused
         )
         return F.linear(features, self.embed_word_del.weight), extra['attn']
 

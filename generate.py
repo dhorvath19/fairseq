@@ -21,7 +21,7 @@ def main(args):
     assert args.replace_unk is None or args.raw_text, \
         '--replace-unk requires a raw text dataset (--raw-text)'
     
-    wandb.init(project=args.job_name, config=args)
+    # wandb.init(project=args.job_name, config=args)
 
     utils.import_user_module(args)
 
@@ -173,7 +173,7 @@ def main(args):
                                         sample_id, step,
                                         utils.post_process_prediction(
                                             h['tokens'].int().cpu(),
-                                            src_str, None, None, tgt_dict, None)[1])
+                                            src_str, None, None, tgt_dict, None)[1].encode('utf-8').decode('latin-1'))
                                         for step, h in enumerate(hypo['history'])]))
 
                     # Score only the top hypothesis
@@ -189,7 +189,7 @@ def main(args):
             wps_meter.update(num_generated_tokens)
             t.log({'wps': round(wps_meter.avg)})
             num_sentences += sample['nsentences']
-            wandb.log({'num_sentences': num_sentences, 'wps': round(wps_meter.avg), 'progress': (float(idx)/iter_len) * 100})
+            # wandb.log({'num_sentences': num_sentences, 'wps': round(wps_meter.avg), 'progress': (float(idx)/iter_len) * 100})
 
     print('| Translated {} sentences ({} tokens) in {:.1f}s ({:.2f} sentences/s, {:.2f} tokens/s)'.format(
         num_sentences, gen_timer.n, gen_timer.sum, num_sentences / gen_timer.sum, 1. / gen_timer.avg))
